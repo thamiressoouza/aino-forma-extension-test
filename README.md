@@ -1,6 +1,6 @@
 
-# AINO Forma Extension Test
+# Urban Analysis Viewer
 
-Temporary public test page for validating that a hosted web page can read a non-sensitive AINO GeoJSON layer.
+Private proof-of-concept for viewing a non-sensitive AINO GeoJSON layer inside Autodesk Forma.
 
-Do not upload confidential project data to this repository.
+Do not upload confidential project, client, or company data to this public repository.
