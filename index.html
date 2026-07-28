@@ -147,6 +147,9 @@
 <div id="forma-sdk-panel">
   <button id="diagnoseFormaButton">Diagnose Forma SDK</button>
   
+<button id="diagnoseGeoDataUploadButton">Diagnose geoData.upload</button>
+
+  
 <button id="sendRegionalRoadButton">Send Regional Road to Forma canvas</button>
 <button id="clearFormaOverlayButton">Clear Forma canvas overlay</button>
 
@@ -831,6 +834,91 @@
 
   clearButton?.addEventListener("click", () => {
     void clearFormaCanvasOverlay();
+  });
+</script>
+
+
+<script type="module" id="geodata-upload-diagnostics-script">
+  import { Forma } from "https://esm.sh/forma-embedded-view-sdk@0.93.0/auto?bundle";
+
+  const diagnoseGeoDataButton = document.getElementById("diagnoseGeoDataUploadButton");
+  const diagnosticsElement = document.getElementById("formaSdkDiagnostics");
+
+  function writeDiagnostics(value) {
+    if (!diagnosticsElement) {
+      console.log("geoData.upload diagnostics:", value);
+      return;
+    }
+
+    diagnosticsElement.style.display = "block";
+    diagnosticsElement.textContent =
+      typeof value === "string" ? value : JSON.stringify(value, null, 2);
+  }
+
+  function normalizeError(error) {
+    if (error instanceof Error) {
+      return `${error.name}: ${error.message}`;
+    }
+
+    return String(error);
+  }
+
+  function getFunctionPreview(fn) {
+    try {
+      if (typeof fn !== "function") {
+        return null;
+      }
+
+      return String(fn).slice(0, 1200);
+    } catch (error) {
+      return `Could not inspect function: ${normalizeError(error)}`;
+    }
+  }
+
+  async function runGeoDataUploadDiagnostics() {
+    try {
+      writeDiagnostics("Running geoData.upload diagnostics...");
+
+      const report = {
+        build: "v0_4a_geodata_upload_diagnostics_001",
+        action: "diagnoseGeoDataUpload",
+        formaLoaded: Boolean(Forma),
+        geoDataExists: Boolean(Forma?.geoData),
+        uploadExists: typeof Forma?.geoData?.upload === "function",
+        uploadFunctionLength: Forma?.geoData?.upload?.length ?? null,
+        uploadFunctionPreview: getFunctionPreview(Forma?.geoData?.upload),
+        projectGeoLocation: null,
+        project: null,
+        proposalId: null,
+        note: "This diagnostic does not call geoData.upload and does not upload data."
+      };
+
+      if (Forma?.project?.getGeoLocation) {
+        report.projectGeoLocation = await Forma.project.getGeoLocation();
+      }
+
+      if (Forma?.project?.get) {
+        report.project = await Forma.project.get();
+      }
+
+      if (Forma?.proposal?.getId) {
+        report.proposalId = await Forma.proposal.getId();
+      }
+
+      writeDiagnostics(report);
+      console.log("geoData.upload diagnostics:", report);
+    } catch (error) {
+      writeDiagnostics({
+        build: "v0_4a_geodata_upload_diagnostics_001",
+        action: "diagnoseGeoDataUpload",
+        ok: false,
+        error: normalizeError(error)
+      });
+    }
+  }
+
+  diagnoseGeoDataButton?.addEventListener("click", () => {
+    void runGeoDataUploadDiagnostics();
   });
 </script>
 
