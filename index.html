@@ -85,7 +85,41 @@
         transform: translate(-50%, -50%) rotate(45deg);
       }
     </style>
-  </head>
+  
+<style id="forma-sdk-diagnostics-style">
+  #forma-sdk-panel {
+    padding: 10px 16px;
+    border-bottom: 1px solid #ddd;
+    background: #fafafa;
+    font-size: 13px;
+  }
+
+  #diagnoseFormaButton {
+    padding: 7px 10px;
+    cursor: pointer;
+    border: 1px solid #bbb;
+    background: white;
+    border-radius: 4px;
+    margin-right: 8px;
+  }
+
+  #formaSdkDiagnostics {
+    margin-top: 8px;
+    background: #f4f4f4;
+    border-radius: 6px;
+    padding: 10px;
+    max-height: 220px;
+    overflow: auto;
+    white-space: pre-wrap;
+    display: none;
+  }
+
+  #map {
+    height: calc(100% - 160px) !important;
+  }
+</style>
+
+</head>
 
   <body>
     <div id="header">
@@ -93,7 +127,14 @@
       <p>Regional roads, open space, bus stops and train station.</p>
     </div>
 
-    <div id="map"></div>
+    
+<div id="forma-sdk-panel">
+  <button id="diagnoseFormaButton">Diagnose Forma SDK</button>
+  <span>Use this inside Autodesk Forma to check canvas/API access.</span>
+  <pre id="formaSdkDiagnostics"></pre>
+</div>
+
+<div id="map"></div>
 
     <script>
       const embeddedLayers = window.AINO_LAYERS || [];
@@ -417,5 +458,139 @@
         map.setView([53.35, -6.26], 10);
       }
     </script>
-  </body>
+  
+<script type="module" id="forma-sdk-diagnostics-script">
+  import { Forma } from "https://esm.sh/forma-embedded-view-sdk@0.93.0/auto?bundle";
+
+  window.FormaSDK = Forma;
+
+  const diagnosticsElement = document.getElementById("formaSdkDiagnostics");
+  const diagnoseButton = document.getElementById("diagnoseFormaButton");
+
+  function setDiagnostics(value) {
+    diagnosticsElement.style.display = "block";
+    diagnosticsElement.textContent =
+      typeof value === "string" ? value : JSON.stringify(value, null, 2);
+  }
+
+  function normalizeError(error) {
+    if (error instanceof Error) {
+      return `${error.name}: ${error.message}`;
+    }
+
+    return String(error);
+  }
+
+  async function safeCall(label, callback) {
+    try {
+      const value = await callback();
+
+      return {
+        ok: true,
+        value: value
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        error: normalizeError(error)
+      };
+    }
+  }
+
+  function getFunctionNames(obj) {
+    if (!obj) {
+      return [];
+    }
+
+    const names = new Set();
+    let current = obj;
+
+    while (current && current !== Object.prototype) {
+      for (const name of Object.getOwnPropertyNames(current)) {
+        try {
+          if (
+            typeof obj[name] === "function" &&
+            name !== "constructor" &&
+            !name.startsWith("_")
+          ) {
+            names.add(name);
+          }
+        } catch (error) {
+          // Ignore inaccessible properties.
+        }
+      }
+
+      current = Object.getPrototypeOf(current);
+    }
+
+    return Array.from(names).sort();
+  }
+
+  function isInsideIframe() {
+    try {
+      return window.self !== window.top;
+    } catch (error) {
+      return true;
+    }
+  }
+
+  async function runFormaDiagnostics() {
+    setDiagnostics("Running Forma SDK diagnostics...");
+
+    const report = {
+      build: "v0_3a_sdk_diagnostics_001",
+      pageUrl: window.location.href,
+      isInsideIframe: isInsideIframe(),
+      formaLoaded: Boolean(Forma),
+      topLevelApis: Object.keys(Forma || {}).sort(),
+      availableFunctions: {
+        terrain: getFunctionNames(Forma?.terrain),
+        render: getFunctionNames(Forma?.render),
+        renderGeojson: getFunctionNames(Forma?.render?.geojson),
+        geoData: getFunctionNames(Forma?.geoData),
+        project: getFunctionNames(Forma?.project),
+        proposal: getFunctionNames(Forma?.proposal),
+        camera: getFunctionNames(Forma?.camera)
+      },
+      calls: {}
+    };
+
+    if (Forma?.terrain?.getBbox) {
+      report.calls["terrain.getBbox"] = await safeCall(
+        "terrain.getBbox",
+        () => Forma.terrain.getBbox()
+      );
+    }
+
+    if (Forma?.camera?.get) {
+      report.calls["camera.get"] = await safeCall(
+        "camera.get",
+        () => Forma.camera.get()
+      );
+    }
+
+    if (Forma?.project?.getGeoLocation) {
+      report.calls["project.getGeoLocation"] = await safeCall(
+        "project.getGeoLocation",
+        () => Forma.project.getGeoLocation()
+      );
+    }
+
+    if (Forma?.proposal?.getId) {
+      report.calls["proposal.getId"] = await safeCall(
+        "proposal.getId",
+        () => Forma.proposal.getId()
+      );
+    }
+
+    setDiagnostics(report);
+    console.log("Forma SDK diagnostics:", report);
+  }
+
+  diagnoseButton?.addEventListener("click", () => {
+    void runFormaDiagnostics();
+  });
+</script>
+
+</body>
 </html>
