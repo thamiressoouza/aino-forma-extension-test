@@ -4,8 +4,9 @@
 Private proof-of-concept for viewing selected AINO GeoJSON layers inside Autodesk Forma.
 
 Included test layers:
-- National Roads
 - Regional Road
-- Transport Rail Air Stations
+- Open Space and Amenity
+- Bus Stop
+- Train Station Hazelhatch and Celbridge
 
 Do not upload confidential project, client, or company data to this public repository.
