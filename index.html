@@ -10,6 +10,11 @@
       href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
     />
 
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css"
+    />
+
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="./data.js?v=v0_2_rebuilt_001"></script>
 
@@ -297,10 +302,12 @@
         };
       }
 
-      function createPinIcon(color, symbol) {
+      function createPinIcon(color, iconName) {
         const html = `
           <div class="custom-pin" style="background: ${color};">
-            <span>${symbol}</span>
+            <span>
+              <i class="fa fa-${iconName}"></i>
+            </span>
           </div>
         `;
 
@@ -337,7 +344,7 @@
           searchableText.includes("bus stop")
         ) {
           return L.marker(latlng, {
-            icon: createPinIcon("#FFA800", "B")
+            icon: createPinIcon("#FFA800", "bus")
           });
         }
 
@@ -347,7 +354,7 @@
           stationName !== ""
         ) {
           return L.marker(latlng, {
-            icon: createPinIcon("#94C77A", "T")
+            icon: createPinIcon("#94C77A", "train")
           });
         }
 
