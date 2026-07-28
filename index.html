@@ -120,6 +120,9 @@
 </style>
 
 
+
+
+
 <style id="forma-canvas-render-style">
   #sendRegionalRoadButton,
   #clearFormaOverlayButton {
@@ -555,7 +558,7 @@
     setDiagnostics("Running Forma SDK diagnostics...");
 
     const report = {
-      build: "v0_3b_render_regional_road_001",
+      build: "v0_3c_explode_multigeometries_001",
       pageUrl: window.location.href,
       isInsideIframe: isInsideIframe(),
       formaLoaded: Boolean(Forma),
@@ -610,14 +613,15 @@
 </script>
 
 
+
+
+
 <script type="module" id="forma-canvas-render-script">
   import { Forma } from "https://esm.sh/forma-embedded-view-sdk@0.93.0/auto?bundle";
 
   const sendButton = document.getElementById("sendRegionalRoadButton");
   const clearButton = document.getElementById("clearFormaOverlayButton");
   const diagnosticsElement = document.getElementById("formaSdkDiagnostics");
-
-  let currentRenderResult = null;
 
   function writeCanvasStatus(value) {
     if (!diagnosticsElement) {
@@ -663,25 +667,68 @@
     );
   }
 
+  function explodeFeatureToSupportedFeatures(feature) {
+    const geometry = feature.geometry;
+    const properties = feature.properties || {};
+
+    if (!geometry) {
+      return [];
+    }
+
+    if (geometry.type === "LineString" || geometry.type === "Polygon") {
+      return [feature];
+    }
+
+    if (geometry.type === "MultiLineString") {
+      return geometry.coordinates.map((lineCoordinates, index) => ({
+        type: "Feature",
+        properties: {
+          ...properties,
+          exploded_from: geometry.type,
+          exploded_part: index
+        },
+        geometry: {
+          type: "LineString",
+          coordinates: lineCoordinates
+        }
+      }));
+    }
+
+    if (geometry.type === "MultiPolygon") {
+      return geometry.coordinates.map((polygonCoordinates, index) => ({
+        type: "Feature",
+        properties: {
+          ...properties,
+          exploded_from: geometry.type,
+          exploded_part: index
+        },
+        geometry: {
+          type: "Polygon",
+          coordinates: polygonCoordinates
+        }
+      }));
+    }
+
+    return [];
+  }
+
   function transformFeatureCollectionToFormaLocal(geojson, originLon, originLat) {
+    const supportedFeatures = geojson.features.flatMap(explodeFeatureToSupportedFeatures);
+
     return {
       type: "FeatureCollection",
-      features: geojson.features
-        .filter((feature) => feature.geometry)
-        .map((feature) => {
-          return {
-            type: "Feature",
-            properties: feature.properties || {},
-            geometry: {
-              type: feature.geometry.type,
-              coordinates: transformCoordinatesToFormaLocal(
-                feature.geometry.coordinates,
-                originLon,
-                originLat
-              )
-            }
-          };
-        })
+      features: supportedFeatures.map((feature) => ({
+        type: "Feature",
+        properties: feature.properties || {},
+        geometry: {
+          type: feature.geometry.type,
+          coordinates: transformCoordinatesToFormaLocal(
+            feature.geometry.coordinates,
+            originLon,
+            originLat
+          )
+        }
+      }))
     };
   }
 
@@ -713,31 +760,36 @@
         originLat
       );
 
-      currentRenderResult = await Forma.render.geojson.add({
+      const renderResult = await Forma.render.geojson.add({
         geojson: formaLocalGeojson
       });
 
       writeCanvasStatus({
-        build: "v0_3b_render_regional_road_001",
+        build: "v0_3c_explode_multigeometries_001",
         action: "sendRegionalRoadToFormaCanvas",
         ok: true,
         projectGeoLocation: projectGeoLocation,
         sourceLayer: {
           id: layer.id,
           name: layer.name,
-          featureCount: layer.geojson.features.length
+          originalFeatureCount: layer.geojson.features.length
         },
-        transformedFeatureCount: formaLocalGeojson.features.length,
-        renderResult: currentRenderResult,
-        note: "If geometry appears shifted or rotated, the lon/lat-to-local transform needs refinement."
+        sentToForma: {
+          featureCount: formaLocalGeojson.features.length,
+          geometryTypes: [
+            ...new Set(formaLocalGeojson.features.map((feature) => feature.geometry.type))
+          ]
+        },
+        renderResult: renderResult,
+        note: "MultiLineString/MultiPolygon features were exploded into LineString/Polygon features."
       });
 
-      console.log("Forma render result:", currentRenderResult);
+      console.log("Forma render result:", renderResult);
       console.log("Forma local GeoJSON sent:", formaLocalGeojson);
 
     } catch (error) {
       writeCanvasStatus({
-        build: "v0_3b_render_regional_road_001",
+        build: "v0_3c_explode_multigeometries_001",
         action: "sendRegionalRoadToFormaCanvas",
         ok: false,
         error: normalizeError(error)
@@ -757,17 +809,15 @@
         throw new Error("No cleanup function found on Forma.render.");
       }
 
-      currentRenderResult = null;
-
       writeCanvasStatus({
-        build: "v0_3b_render_regional_road_001",
+        build: "v0_3c_explode_multigeometries_001",
         action: "clearFormaCanvasOverlay",
         ok: true
       });
 
     } catch (error) {
       writeCanvasStatus({
-        build: "v0_3b_render_regional_road_001",
+        build: "v0_3c_explode_multigeometries_001",
         action: "clearFormaCanvasOverlay",
         ok: false,
         error: normalizeError(error)
