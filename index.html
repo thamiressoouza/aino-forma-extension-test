@@ -119,6 +119,19 @@
   }
 </style>
 
+
+<style id="forma-canvas-render-style">
+  #sendRegionalRoadButton,
+  #clearFormaOverlayButton {
+    padding: 7px 10px;
+    cursor: pointer;
+    border: 1px solid #bbb;
+    background: white;
+    border-radius: 4px;
+    margin-right: 8px;
+  }
+</style>
+
 </head>
 
   <body>
@@ -130,6 +143,10 @@
     
 <div id="forma-sdk-panel">
   <button id="diagnoseFormaButton">Diagnose Forma SDK</button>
+  
+<button id="sendRegionalRoadButton">Send Regional Road to Forma canvas</button>
+<button id="clearFormaOverlayButton">Clear Forma canvas overlay</button>
+
   <span>Use this inside Autodesk Forma to check canvas/API access.</span>
   <pre id="formaSdkDiagnostics"></pre>
 </div>
@@ -538,7 +555,7 @@
     setDiagnostics("Running Forma SDK diagnostics...");
 
     const report = {
-      build: "v0_3a_sdk_diagnostics_001",
+      build: "v0_3b_render_regional_road_001",
       pageUrl: window.location.href,
       isInsideIframe: isInsideIframe(),
       formaLoaded: Boolean(Forma),
@@ -589,6 +606,181 @@
 
   diagnoseButton?.addEventListener("click", () => {
     void runFormaDiagnostics();
+  });
+</script>
+
+
+<script type="module" id="forma-canvas-render-script">
+  import { Forma } from "https://esm.sh/forma-embedded-view-sdk@0.93.0/auto?bundle";
+
+  const sendButton = document.getElementById("sendRegionalRoadButton");
+  const clearButton = document.getElementById("clearFormaOverlayButton");
+  const diagnosticsElement = document.getElementById("formaSdkDiagnostics");
+
+  let currentRenderResult = null;
+
+  function writeCanvasStatus(value) {
+    if (!diagnosticsElement) {
+      console.log("Canvas render status:", value);
+      return;
+    }
+
+    diagnosticsElement.style.display = "block";
+    diagnosticsElement.textContent =
+      typeof value === "string" ? value : JSON.stringify(value, null, 2);
+  }
+
+  function normalizeError(error) {
+    if (error instanceof Error) {
+      return `${error.name}: ${error.message}`;
+    }
+
+    return String(error);
+  }
+
+  function metersFromLonLat(lon, lat, originLon, originLat) {
+    const metersPerDegreeLat = 111320;
+    const metersPerDegreeLon = 111320 * Math.cos(originLat * Math.PI / 180);
+
+    return [
+      (lon - originLon) * metersPerDegreeLon,
+      (lat - originLat) * metersPerDegreeLat
+    ];
+  }
+
+  function transformCoordinatesToFormaLocal(coordinates, originLon, originLat) {
+    if (
+      Array.isArray(coordinates) &&
+      coordinates.length >= 2 &&
+      typeof coordinates[0] === "number" &&
+      typeof coordinates[1] === "number"
+    ) {
+      return metersFromLonLat(coordinates[0], coordinates[1], originLon, originLat);
+    }
+
+    return coordinates.map((part) =>
+      transformCoordinatesToFormaLocal(part, originLon, originLat)
+    );
+  }
+
+  function transformFeatureCollectionToFormaLocal(geojson, originLon, originLat) {
+    return {
+      type: "FeatureCollection",
+      features: geojson.features
+        .filter((feature) => feature.geometry)
+        .map((feature) => {
+          return {
+            type: "Feature",
+            properties: feature.properties || {},
+            geometry: {
+              type: feature.geometry.type,
+              coordinates: transformCoordinatesToFormaLocal(
+                feature.geometry.coordinates,
+                originLon,
+                originLat
+              )
+            }
+          };
+        })
+    };
+  }
+
+  function getLayerById(layerId) {
+    return (window.AINO_LAYERS || []).find((layer) => layer.id === layerId);
+  }
+
+  async function sendRegionalRoadToFormaCanvas() {
+    try {
+      writeCanvasStatus("Sending Regional Road to Forma canvas...");
+
+      if (!Forma?.render?.geojson?.add) {
+        throw new Error("Forma.render.geojson.add is not available.");
+      }
+
+      const projectGeoLocation = await Forma.project.getGeoLocation();
+      const originLat = projectGeoLocation[0];
+      const originLon = projectGeoLocation[1];
+
+      const layer = getLayerById("regional_road");
+
+      if (!layer) {
+        throw new Error("Layer not found in window.AINO_LAYERS: regional_road");
+      }
+
+      const formaLocalGeojson = transformFeatureCollectionToFormaLocal(
+        layer.geojson,
+        originLon,
+        originLat
+      );
+
+      currentRenderResult = await Forma.render.geojson.add({
+        geojson: formaLocalGeojson
+      });
+
+      writeCanvasStatus({
+        build: "v0_3b_render_regional_road_001",
+        action: "sendRegionalRoadToFormaCanvas",
+        ok: true,
+        projectGeoLocation: projectGeoLocation,
+        sourceLayer: {
+          id: layer.id,
+          name: layer.name,
+          featureCount: layer.geojson.features.length
+        },
+        transformedFeatureCount: formaLocalGeojson.features.length,
+        renderResult: currentRenderResult,
+        note: "If geometry appears shifted or rotated, the lon/lat-to-local transform needs refinement."
+      });
+
+      console.log("Forma render result:", currentRenderResult);
+      console.log("Forma local GeoJSON sent:", formaLocalGeojson);
+
+    } catch (error) {
+      writeCanvasStatus({
+        build: "v0_3b_render_regional_road_001",
+        action: "sendRegionalRoadToFormaCanvas",
+        ok: false,
+        error: normalizeError(error)
+      });
+    }
+  }
+
+  async function clearFormaCanvasOverlay() {
+    try {
+      writeCanvasStatus("Clearing Forma canvas overlay...");
+
+      if (Forma?.render?.geojson?.cleanup) {
+        await Forma.render.geojson.cleanup();
+      } else if (Forma?.render?.cleanup) {
+        await Forma.render.cleanup();
+      } else {
+        throw new Error("No cleanup function found on Forma.render.");
+      }
+
+      currentRenderResult = null;
+
+      writeCanvasStatus({
+        build: "v0_3b_render_regional_road_001",
+        action: "clearFormaCanvasOverlay",
+        ok: true
+      });
+
+    } catch (error) {
+      writeCanvasStatus({
+        build: "v0_3b_render_regional_road_001",
+        action: "clearFormaCanvasOverlay",
+        ok: false,
+        error: normalizeError(error)
+      });
+    }
+  }
+
+  sendButton?.addEventListener("click", () => {
+    void sendRegionalRoadToFormaCanvas();
+  });
+
+  clearButton?.addEventListener("click", () => {
+    void clearFormaCanvasOverlay();
   });
 </script>
 
